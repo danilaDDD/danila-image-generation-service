@@ -1,0 +1,21 @@
+.idea/
+.vscode/
+.DS_Store
+.pytest_cache/
+.coverage
+logs/*.log
+reports/
+**/__pycache__/
+*.py[cod]
+env/
+venv/
+.venv/
+.git/
+.github/
+
+# Рабочие env-файлы в образ не кладём: их значения приходят в рантайме через
+# env_file в docker-compose.yml, а запечённый в образ conf/.env.dev — это чужая
+# машина в чужом окружении (и потенциально креды) внутри слоя.
+# Шаблоны остаются: по ним видно, какие переменные нужны.
+conf/.env.*
+!conf/.env.*.example

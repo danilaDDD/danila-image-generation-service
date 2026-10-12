@@ -1,0 +1,134 @@
+# Порты публикуются только на 127.0.0.1: правила публикации Docker пишет в nat/PREROUTING,
+# в обход цепочки INPUT, поэтому ufw их не закрывает — на VDS биндинг на 0.0.0.0 означает
+# открытые всему интернету Mongo и Redis. Наружу сервис отдаёт reverse proxy.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    container_name: image_gen_app
+    restart: unless-stopped
+    # Хосты сервисов (app_db/redis) заданы прямо в conf/.env.dev
+    env_file:
+      - conf/.env.dev
+    ports:
+      # Только loopback: наружу сервис отдаёт reverse proxy с TLS
+      - "127.0.0.1:8002:8000"
+    depends_on:
+      app_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_started
+    volumes:
+      - ./logs:/app/logs
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    container_name: image_gen_worker
+    restart: unless-stopped
+    # Хосты сервисов (app_db/redis) заданы прямо в conf/.env.dev
+    env_file:
+      - conf/.env.dev
+    command: celery -A app.celery worker -l INFO
+    depends_on:
+      app_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+
+  app_db:
+    image: mongo:7
+    container_name: image_gen_db
+    restart: unless-stopped
+    env_file:
+      - conf/.env.db
+    ports:
+      - "127.0.0.1:27018:27017"
+    volumes:
+      - db_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: image_gen_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  flower:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    container_name: image_gen_flower
+    restart: unless-stopped
+    profiles:
+      - dev
+    # Хосты сервисов (app_db/redis) заданы прямо в conf/.env.dev
+    env_file:
+      - conf/.env.dev
+    command: celery -A app.celery flower --port=5555
+    ports:
+      # Flower без пароля и показывает содержимое задач — наружу не публикуем
+      - "127.0.0.1:5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  test_app:
+    build:
+      context: .
+      dockerfile: docker/test.Dockerfile
+    container_name: image_gen_test_app
+    profiles:
+      - test
+    # Хосты сервисов (test_db/redis) заданы прямо в conf/.env.test
+    env_file:
+      - conf/.env.test
+    depends_on:
+      test_db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./reports:/app/reports
+
+  test_db:
+    image: mongo:7
+    container_name: image_gen_test_db
+    profiles:
+      - test
+    ports:
+      - "127.0.0.1:27019:27017"
+    tmpfs:
+      - /data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  db_data:
+    driver: local
+  redis_data:
+    driver: local

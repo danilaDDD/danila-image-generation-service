@@ -1,0 +1,16 @@
+conf/.env.*
+# Шаблоны наоборот храним в git — с них копируются рабочие .env.*
+!conf/.env.*.example
+.idea/
+.vscode/.*
+.DS_Store
+.pytest_cache/
+.coverage
+logs/*.log
+env/
+venv/
+CLAUDE.md
+.claude/
+.superpowers/
+__pycache__/
+*.py[cod]
